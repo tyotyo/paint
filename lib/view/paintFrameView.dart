@@ -1,11 +1,16 @@
-import 'dart:math';
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:paint/component/button.dart';
 import 'package:paint/viewModel/paintViewModel.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:gallery_saver/gallery_saver.dart';
 
 class PaintFrameView extends StatefulWidget {
   // const PaintFrameView({Key? key}) : super(key: key);
@@ -17,23 +22,7 @@ class PaintFrameView extends StatefulWidget {
 class _PaintFrameViewState extends State<PaintFrameView> {
 
   ImagePicker _picker = ImagePicker();
-  // PaintViewModel? _controller;
-  // PaintViewModel _controller = _newController();
-
-  // static PaintViewModel _newController() {
-  //   PaintViewModel controller = PaintViewModel();
-  //   controller.thickness = 5.0;
-  //   controller.backgroundColor = Colors.green;
-  //   return controller;
-  // }
-
-  @override
-  void initState() {
-    super.initState();
-    // _controller = Provider.of<PaintViewModel>(context)
-    //   ..thickness = 5
-    //   ..backgroundColor = Colors.white;
-  }
+  static GlobalKey _boxKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
@@ -46,9 +35,23 @@ class _PaintFrameViewState extends State<PaintFrameView> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(left: 16),
-                child: PaintButton("SAVE", () {
-                  print("save");
-                }, disable: true,),
+                child: PaintButton("SAVE", () async {
+                  var boundary = _boxKey.currentContext!.findRenderObject();
+                  ui.Image image = await (boundary as RenderRepaintBoundary).toImage();
+                  final directory = (await getTemporaryDirectory()).path;
+                  ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                  if (byteData != null) {
+                    Uint8List pngBytes = byteData.buffer.asUint8List();
+                    File imgFile = File("$directory/screenshot_${DateTime.now().millisecondsSinceEpoch}.png");
+                    imgFile.writeAsBytes(pngBytes);
+                    // print("캡쳐완료 $directory/screenshot_${DateTime.now().millisecondsSinceEpoch}.png");
+
+                    GallerySaver.saveImage(imgFile.path).then((value) {
+                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("이미지가 저장되었습니다.")));
+                    });
+                  }
+
+                }, disable: false),
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 5),
@@ -117,21 +120,32 @@ class _PaintFrameViewState extends State<PaintFrameView> {
             )
           ],
         ),
-      body: Stack(
-        children: [
-          Container(
-            color: Colors.white,
+      body: Container(
+        color: Colors.black,
+        child: Center(
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: RepaintBoundary(
+              key: _boxKey,
+              child: Stack(
+                children: [
+                  Container(
+                    color: Colors.white,
+                  ),
+                  Stack(
+                    alignment: Alignment.center,
+                    children: List.generate(_controller.media.length, (index) => Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      child: Image.memory(_controller.media[index]),
+                    )),
+                  ),
+                  PaintView(_controller)
+                ],
+              ),
+            ),
           ),
-          Stack(
-            alignment: Alignment.center,
-            children: List.generate(_controller.media.length, (index) => Container(
-              width: double.infinity,
-              height: double.infinity,
-              child: Image.memory(_controller.media[index]),
-            )),
-          ),
-          PaintView(_controller)
-        ],
+        ),
       ),
     );
   }
